@@ -47,14 +47,14 @@ int main() {
   wasmtime_context_t *context = wasmtime_store_context(store);
 
   // Read our input file, which in this case is a wasm text file.
-  FILE *file = fopen("examples/hello.wat", "r");
+  FILE *file = fopen("examples/hello.wat", "rb");
   assert(file != NULL);
   fseek(file, 0L, SEEK_END);
   size_t file_size = ftell(file);
   fseek(file, 0L, SEEK_SET);
   wasm_byte_vec_t wat;
   wasm_byte_vec_new_uninitialized(&wat, file_size);
-  if (fread(wat.data, file_size, 1, file) != 1) {
+  if (fread(wat.data, 1, file_size, file) != file_size) {
     printf("> Error loading module!\n");
     return 1;
   }

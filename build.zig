@@ -13,6 +13,7 @@ pub fn build(b: *std.Build) !void {
 
     const os_tag = target.result.os.tag;
     const cpu_arch = target.result.cpu.arch;
+    const abi = target.result.abi;
 
     const lib_conf: LibConfig = switch (os_tag) {
         .linux => .{
@@ -40,16 +41,33 @@ pub fn build(b: *std.Build) !void {
             },
             .lib_name = "lib/libwasmtime.a",
         },
-        .windows => .{
-            .dep_name = switch (cpu_arch) {
-                .aarch64 => "wasmtime-c-api_aarch64-windows",
-                .x86_64 => "wasmtime-c-api_x86_64-windows",
-                else => {
-                    std.debug.print("error: invalid CPU arch for {t}: {t}", .{ os_tag, cpu_arch });
-                    return error.Target;
+        .windows => switch (abi) {
+            .msvc => .{
+                .dep_name = switch (cpu_arch) {
+                    .aarch64 => "wasmtime-c-api_aarch64-windows",
+                    .x86_64 => "wasmtime-c-api_x86_64-windows",
+                    else => {
+                        std.debug.print("error: invalid CPU arch for {t}: {t}", .{ os_tag, cpu_arch });
+                        return error.Target;
+                    },
                 },
+                .lib_name = "lib/wasmtime.lib",
             },
-            .lib_name = "lib/wasmtime.lib",
+            .gnu => .{
+                .dep_name = switch (cpu_arch) {
+                    .aarch64 => "wasmtime-c-api_aarch64-mingw",
+                    .x86_64 => "wasmtime-c-api_x86_64-mingw",
+                    else => {
+                        std.debug.print("error: invalid CPU arch for {t}: {t}", .{ os_tag, cpu_arch });
+                        return error.Target;
+                    },
+                },
+                .lib_name = "lib/libwasmtime.a",
+            },
+            else => {
+                std.debug.print("error: invalid ABI for {t}: {t}", .{ os_tag, abi });
+                return error.Target;
+            },
         },
         else => {
             std.debug.print("error: invalid OS: {t}", .{os_tag});
