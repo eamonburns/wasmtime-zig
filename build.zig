@@ -142,6 +142,25 @@ fn makeExample(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     c_exe.addIncludePath(wasmtime_dep.path("include/"));
     c_exe.root_module.linkSystemLibrary("unwind", .{});
 
+    // Extra libraries
+    switch (target.result.os.tag) {
+        .linux => {
+            c_exe.root_module.linkSystemLibrary("pthread", .{ .preferred_link_mode = .static });
+            c_exe.root_module.linkSystemLibrary("dl", .{ .preferred_link_mode = .static });
+            c_exe.root_module.linkSystemLibrary("m", .{ .preferred_link_mode = .static });
+        },
+        .macos => {}, // No extra libraries needed
+        .windows => {
+            c_exe.root_module.linkSystemLibrary("advapi32", .{});
+            c_exe.root_module.linkSystemLibrary("userenv", .{});
+            c_exe.root_module.linkSystemLibrary("ntdll", .{});
+            c_exe.root_module.linkSystemLibrary("shell32", .{});
+            c_exe.root_module.linkSystemLibrary("ole32", .{});
+            c_exe.root_module.linkSystemLibrary("bcrypt", .{});
+        },
+        else => @panic("Invalid target OS"),
+    }
+
     const c_run = b.addRunArtifact(c_exe);
     example_c_step.dependOn(&c_run.step);
 
