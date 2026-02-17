@@ -76,7 +76,7 @@ pub fn build(b: *std.Build) !void {
     };
     std.debug.print("dep_name: '{s}', lib_name: '{s}'\n", .{ lib_conf.dep_name, lib_conf.lib_name });
 
-    const mod = b.addModule("wasmtime_zig", .{
+    const mod = b.addModule("wasmtime", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
@@ -92,7 +92,7 @@ pub fn build(b: *std.Build) !void {
         };
 
         for (example_names) |name| {
-            const example_zig, const example_c = makeExample(b, target, optimize, dep, lib_conf.lib_name, name);
+            const example_zig, const example_c = makeExample(b, target, optimize, mod, dep, lib_conf.lib_name, name);
             _ = example_zig;
             // const install_zig = b.addInstallArtifact(example_zig, .{});
             // example_all_step.dependOn(&install_zig.step);
@@ -143,44 +143,80 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_exe_tests.step);
 }
 
-fn makeExample(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, wasmtime_dep: *std.Build.Dependency, lib_name: []const u8, example_name: []const u8) struct { *std.Build.Step.Compile, *std.Build.Step.Compile } {
-    const example_c_step = b.step(b.fmt("example_{s}-c", .{example_name}), b.fmt("Build and run the '{s}' example (C)", .{example_name}));
-    const c_exe = b.addExecutable(.{
-        .name = b.fmt("{s}-c", .{example_name}),
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    c_exe.root_module.addCSourceFile(.{
-        .file = b.path(b.fmt("examples/{s}.c", .{example_name})),
-    });
-    c_exe.addObjectFile(wasmtime_dep.path(lib_name));
-    c_exe.addIncludePath(wasmtime_dep.path("include/"));
-    c_exe.root_module.linkSystemLibrary("unwind", .{});
+fn makeExample(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    wasmtime_mod: *std.Build.Module,
+    wasmtime_dep: *std.Build.Dependency,
+    lib_name: []const u8,
+    example_name: []const u8,
+) struct {
+    // Zig example
+    *std.Build.Step.Compile,
+    // C example
+    *std.Build.Step.Compile,
+} {
+    const zig_exe = blk: {
+        const example_step = b.step(b.fmt("example_{s}", .{example_name}), b.fmt("Build and run the '{s}' example (Zig)", .{example_name}));
+        const exe = b.addExecutable(.{
+            .name = example_name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{})),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+                .imports = &.{
+                    .{ .name = "wasmtime", .module = wasmtime_mod },
+                },
+            }),
+        });
 
-    // Extra libraries
-    switch (target.result.os.tag) {
-        .linux => {
-            c_exe.root_module.linkSystemLibrary("pthread", .{ .preferred_link_mode = .static });
-            c_exe.root_module.linkSystemLibrary("dl", .{ .preferred_link_mode = .static });
-            c_exe.root_module.linkSystemLibrary("m", .{ .preferred_link_mode = .static });
-        },
-        .macos => {}, // No extra libraries needed
-        .windows => {
-            c_exe.root_module.linkSystemLibrary("advapi32", .{});
-            c_exe.root_module.linkSystemLibrary("userenv", .{});
-            c_exe.root_module.linkSystemLibrary("ntdll", .{});
-            c_exe.root_module.linkSystemLibrary("shell32", .{});
-            c_exe.root_module.linkSystemLibrary("ole32", .{});
-            c_exe.root_module.linkSystemLibrary("bcrypt", .{});
-        },
-        else => @panic("Invalid target OS"),
-    }
+        const run_step = b.addRunArtifact(exe);
+        example_step.dependOn(&run_step.step);
+        break :blk exe;
+    };
 
-    const c_run = b.addRunArtifact(c_exe);
-    example_c_step.dependOn(&c_run.step);
+    const c_exe = blk: {
+        const example_step = b.step(b.fmt("example_{s}-c", .{example_name}), b.fmt("Build and run the '{s}' example (C)", .{example_name}));
+        const exe = b.addExecutable(.{
+            .name = b.fmt("{s}-c", .{example_name}),
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+        });
+        exe.root_module.addCSourceFile(.{
+            .file = b.path(b.fmt("examples/{s}.c", .{example_name})),
+        });
+        exe.addObjectFile(wasmtime_dep.path(lib_name));
+        exe.addIncludePath(wasmtime_dep.path("include/"));
+        exe.root_module.linkSystemLibrary("unwind", .{});
 
-    return .{ undefined, c_exe };
+        // Extra libraries
+        switch (target.result.os.tag) {
+            .linux => {
+                exe.root_module.linkSystemLibrary("pthread", .{ .preferred_link_mode = .static });
+                exe.root_module.linkSystemLibrary("dl", .{ .preferred_link_mode = .static });
+                exe.root_module.linkSystemLibrary("m", .{ .preferred_link_mode = .static });
+            },
+            .macos => {}, // No extra libraries needed
+            .windows => {
+                exe.root_module.linkSystemLibrary("advapi32", .{});
+                exe.root_module.linkSystemLibrary("userenv", .{});
+                exe.root_module.linkSystemLibrary("ntdll", .{});
+                exe.root_module.linkSystemLibrary("shell32", .{});
+                exe.root_module.linkSystemLibrary("ole32", .{});
+                exe.root_module.linkSystemLibrary("bcrypt", .{});
+            },
+            else => @panic("Invalid target OS"),
+        }
+
+        const run_step = b.addRunArtifact(exe);
+        example_step.dependOn(&run_step.step);
+        break :blk exe;
+    };
+
+    return .{ zig_exe, c_exe };
 }
