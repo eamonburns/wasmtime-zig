@@ -162,7 +162,7 @@ fn makeExample(
         const exe = b.addExecutable(.{
             .name = example_name,
             .root_module = b.createModule(.{
-                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{})),
+                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{example_name})),
                 .target = target,
                 .optimize = optimize,
                 .link_libc = true,
